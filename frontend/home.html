@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bibliothèque de Prompts</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h2>📚 Bibliothèque de Prompts</h2>
+      <button class="btn-danger" onclick="logout()">Déconnexion</button>
+    </div>
+
+    <!-- Formulaire d'ajout / modification -->
+    <div class="card">
+      <h3 id="formTitle" style="margin-bottom: 12px;">Ajouter un prompt</h3>
+      <form id="promptForm">
+        <input type="hidden" id="editPromptId">
+        
+        <input 
+          type="text" 
+          id="title" 
+          placeholder="Titre (ex: Traducteur SQL)" 
+          required
+        >
+        
+        <input 
+          type="text" 
+          id="tagInput" 
+          list="tagsList" 
+          placeholder="Tags séparés par des virgules (ex: Python, API, Code)" 
+          autocomplete="off"
+        >
+        <datalist id="tagsList"></datalist>
+
+        <textarea 
+          id="content" 
+          placeholder="Contenu du prompt..." 
+          rows="3" 
+          required
+        ></textarea>
+        
+        <div style="display: flex; gap: 8px;">
+          <button type="submit" id="submitBtn" class="btn-primary">Enregistrer le prompt</button>
+          <button type="button" id="cancelBtn" class="btn-icon" style="display: none;" onclick="resetForm()">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Barre de recherche -->
+    <input 
+      type="text" 
+      id="search" 
+      placeholder="🔍 Rechercher par titre, tag ou contenu..." 
+      style="margin-bottom: 16px;"
+    >
+
+    <!-- Liste des prompts -->
+    <div id="promptsList"></div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) {
+      window.location.replace("/login.html");
+    }
+
+    let currentUserId = null;
+    let currentPrompts = [];
+
+    function logout() {
+      localStorage.removeItem("token");
+      window.location.replace("/login.html");
+    }
+
+    function escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
+    // Découpage et affichage des tags multiples
+    function renderTags(tagString) {
+      if (!tagString) return '<span class="badge">#Général</span>';
+      const tags = tagString.split(",").map(t => t.trim()).filter(Boolean);
+      return tags.map(t => `<span class="badge" style="margin-right: 4px;">#${escapeHtml(t)}</span>`).join("");
+    }
+
+    // 1. Récupération des infos de l'utilisateur connecté
+    async function fetchMe() {
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.status === 401) return logout();
+        const data = await res.json();
+        currentUserId = data.id;
+      } catch (err) {
+        console.error("Erreur auth:", err);
+      }
+    }
+
+    // 2. Chargement de l'ensemble des tags disponibles
+    async function loadTags() {
+      try {
+        const res = await fetch("/api/tags", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.status === 401) return logout();
+        const tags = await res.json();
+        
+        const datalist = document.getElementById("tagsList");
+        if (datalist) {
+          datalist.innerHTML = tags.map(t => `<option value="${escapeHtml(t)}"></option>`).join("");
+        }
+      } catch (err) {
+        console.error("Erreur tags:", err);
+      }
+    }
+
+    // 3. Chargement de tous les prompts
+    async function loadPrompts(search = "") {
+      try {
+        const url = search ? `/api/prompts?search=${encodeURIComponent(search)}` : "/api/prompts";
+        const res = await fetch(url, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        if (res.status === 401) return logout();
+        currentPrompts = await res.json();
+
+        const container = document.getElementById("promptsList");
+        if (!currentPrompts || currentPrompts.length === 0) {
+          container.innerHTML = `<div class="card" style="text-align: center; color: var(--muted);">Aucun prompt disponible.</div>`;
+          return;
+        }
+
+        container.innerHTML = currentPrompts.map(p => {
+          const isOwner = p.user_id === currentUserId;
+          return `
+            <div class="card">
+              <div class="prompt-header">
+                <div>
+                  <strong style="margin-right: 8px;">${escapeHtml(p.title)}</strong> 
+                  ${renderTags(p.tag)}
+                </div>
+                <div class="prompt-actions">
+                  ${isOwner ? `<button class="btn-icon" onclick="startEditPrompt(${p.id})" title="Modifier">✏️</button>` : ""}
+                  <button class="btn-icon" onclick="copyText('${p.id}', this)" title="Copier">📋</button>
+                  ${isOwner ? `<button class="btn-icon" onclick="deletePrompt(${p.id})" title="Supprimer">🗑️</button>` : ""}
+                </div>
+              </div>
+              <pre id="text-${p.id}">${escapeHtml(p.content)}</pre>
+            </div>
+          `;
+        }).join("");
+      } catch (err) {
+        console.error("Erreur chargement prompts:", err);
+      }
+    }
+
+    // 4. Passage en mode modification
+    function startEditPrompt(id) {
+      const prompt = currentPrompts.find(p => p.id === id);
+      if (!prompt) return;
+
+      document.getElementById("editPromptId").value = prompt.id;
+      document.getElementById("title").value = prompt.title;
+      document.getElementById("tagInput").value = prompt.tag || "";
+      document.getElementById("content").value = prompt.content;
+
+      document.getElementById("formTitle").innerText = "Modifier le prompt";
+      document.getElementById("submitBtn").innerText = "Mettre à jour";
+      document.getElementById("cancelBtn").style.display = "inline-block";
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    // 5. Réinitialisation du formulaire
+    function resetForm() {
+      document.getElementById("promptForm").reset();
+      document.getElementById("editPromptId").value = "";
+      document.getElementById("formTitle").innerText = "Ajouter un prompt";
+      document.getElementById("submitBtn").innerText = "Enregistrer le prompt";
+      document.getElementById("cancelBtn").style.display = "none";
+    }
+
+    // 6. Envoi du formulaire (Création OU Mise à jour)
+    document.getElementById("promptForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById("editPromptId").value;
+      const tagValue = document.getElementById("tagInput").value.trim() || "Général";
+      
+      const payload = {
+        title: document.getElementById("title").value,
+        tag: tagValue,
+        content: document.getElementById("content").value
+      };
+
+      const isEdit = Boolean(editId);
+      const url = isEdit ? `/api/prompts/${editId}` : "/api/prompts";
+      const method = isEdit ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method: method,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.status === 401) return logout();
+
+      resetForm();
+      await loadTags();
+      loadPrompts();
+    });
+
+    // 7. Suppression
+    async function deletePrompt(id) {
+      if (!confirm("Voulez-vous supprimer ce prompt ?")) return;
+      const res = await fetch(`/api/prompts/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.status === 401) return logout();
+      
+      if (document.getElementById("editPromptId").value == id) {
+        resetForm();
+      }
+
+      await loadTags();
+      loadPrompts();
+    }
+
+    // 8. Copie dans le presse-papier
+    function copyText(id, btn) {
+      navigator.clipboard.writeText(document.getElementById(`text-${id}`).innerText);
+      const prev = btn.innerText;
+      btn.innerText = "✅";
+      setTimeout(() => btn.innerText = prev, 1200);
+    }
+
+    // Recherche en temps réel
+    document.getElementById("search").addEventListener("input", (e) => loadPrompts(e.target.value));
+
+    // Lancement
+    async function init() {
+      await fetchMe();
+      await loadTags();
+      await loadPrompts();
+    }
+
+    init();
+  </script>
+</body>
+</html>

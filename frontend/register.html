@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inscription</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card auth-box">
+    <h2 style="margin-bottom: 14px;">Créer un compte</h2>
+    <form id="registerForm">
+      <input type="email" id="email" placeholder="Adresse email" required>
+      <input type="password" id="password" placeholder="Mot de passe" required>
+      <button type="submit" class="btn-success">S'inscrire</button>
+      <div id="error" class="error"></div>
+    </form>
+    <p style="margin-top: 14px; font-size: 14px; text-align: center;">
+      Déjà un compte ? <a href="/login.html">Se connecter</a>
+    </p>
+  </div>
+  <script>
+    document.getElementById("registerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorDiv = document.getElementById("error");
+      errorDiv.innerText = "";
+
+      try {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("email").value,
+            password: document.getElementById("password").value
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorDiv.innerText = data.detail || "Erreur d'inscription";
+        } else {
+          localStorage.setItem("token", data.access_token);
+          window.location.replace("/home.html");
+        }
+      } catch (err) {
+        errorDiv.innerText = "Impossible de joindre le serveur.";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card auth-box">
+    <h2 style="margin-bottom: 14px;">Connexion</h2>
+    <form id="loginForm">
+      <input type="email" id="email" placeholder="Adresse email" required>
+      <input type="password" id="password" placeholder="Mot de passe" required>
+      <button type="submit" class="btn-primary">Se connecter</button>
+      <div id="error" class="error"></div>
+    </form>
+    <p style="margin-top: 14px; font-size: 14px; text-align: center;">
+      Nouveau compte ? <a href="register.html">Créer un compte</a>
+    </p>
+  </div>
+
+
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById("error").innerText = data.detail || "Erreur de connexion";
+      } else {
+        localStorage.setItem("token", data.access_token);
+        window.location.href = "home.html";
+      }
+    });
+  </script>
+</body>
+</html>
